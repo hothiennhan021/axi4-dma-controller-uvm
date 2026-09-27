@@ -144,7 +144,7 @@ module dma_axi_engine #(
       aw_pend   <= 1'b0;
       w_pend    <= 1'b0;
     end else begin
-      unique case (state)
+      case (state)
         S_IDLE: begin
           if (gnt_valid) begin
             cur_ch    <= gnt_idx;

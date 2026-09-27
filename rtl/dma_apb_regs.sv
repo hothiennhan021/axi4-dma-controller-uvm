@@ -63,13 +63,13 @@ module dma_apb_regs #(
     addr_ok = 1'b0;
     if (paddr[1:0] == 2'b00) begin
       if (is_glb) begin
-        unique case (paddr[7:0])
+        case (paddr[7:0])
           REG_ID[7:0], REG_CTRL[7:0], REG_INT_STATUS[7:0],
           REG_INT_ENABLE[7:0], REG_BUSY[7:0]: addr_ok = 1'b1;
           default:                            addr_ok = 1'b0;
         endcase
       end else if (is_ch) begin
-        unique case (ch_off)
+        case (ch_off)
           CH_CFG, CH_SRC, CH_DST, CH_LEN, CH_CMD, CH_STAT: addr_ok = 1'b1;
           default:                                         addr_ok = 1'b0;
         endcase
@@ -144,7 +144,7 @@ module dma_apb_regs #(
   always_comb begin
     rdata = '0;
     if (is_glb) begin
-      unique case (paddr[7:0])
+      case (paddr[7:0])
         REG_ID[7:0]:         rdata = {DMA_ID_MAGIC, DMA_VERSION, 8'(NUM_CH)};
         REG_CTRL[7:0]:       rdata = {31'b0, glb_en};
         REG_INT_STATUS[7:0]: rdata = int_status & INT_MASK;
@@ -155,7 +155,7 @@ module dma_apb_regs #(
     end else if (is_ch) begin
       for (int c = 0; c < NUM_CH; c++) begin
         if (32'(ch_idx) == c) begin
-          unique case (ch_off)
+          case (ch_off)
             CH_CFG:  rdata = {26'b0, ch_cfg[c]};
             CH_SRC:  rdata = ch_src[c];
             CH_DST:  rdata = ch_dst[c];

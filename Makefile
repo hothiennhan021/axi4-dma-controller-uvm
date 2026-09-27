@@ -95,7 +95,8 @@ lint:
 	done
 
 slang: | $(UVM_HOME)/src/uvm_pkg.sv
-	slang --top tb_top --timescale 1ns/1ps -Wextra \
+	slang --top dma_top -Wextra -Werror $(RTL_SRCS)
+	slang --top tb_top --timescale 1ns/1ps \
 	    +define+UVM_HDL_NO_DPI +incdir+$(UVM_HOME)/src $(UVM_HOME)/src/uvm_pkg.sv -f sim/filelist.f
 
 synth:
