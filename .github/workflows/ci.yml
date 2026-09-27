@@ -1,0 +1,111 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      seeds:
+        description: "seeds per test"
+        default: "3"
+
+env:
+  # OSS CAD Suite nightly the project was verified with (Verilator 5.053,
+  # slang, Yosys, SymbiYosys, z3). If that release has been pruned, the
+  # latest nightly is used instead.
+  OSS_CAD_DATE: "2026-09-26"
+  UVM_TAG: "2020.3.1"
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache OSS CAD Suite
+        id: cache-ocs
+        uses: actions/cache@v4
+        with:
+          path: ~/oss-cad-suite.tgz
+          key: oss-cad-suite-${{ env.OSS_CAD_DATE }}
+
+      - name: Download OSS CAD Suite
+        if: steps.cache-ocs.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          d=${OSS_CAD_DATE//-/}
+          url=https://github.com/YosysHQ/oss-cad-suite-build/releases/download/${OSS_CAD_DATE}/oss-cad-suite-linux-x64-${d}.tgz
+          if ! curl -fsSL -o ~/oss-cad-suite.tgz "$url"; then
+            echo "pinned release not available, using the latest nightly"
+            url=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+                    https://api.github.com/repos/YosysHQ/oss-cad-suite-build/releases/latest \
+                  | grep -o 'https://[^"]*oss-cad-suite-linux-x64-[0-9]*\.tgz' | head -1)
+            curl -fsSL -o ~/oss-cad-suite.tgz "$url"
+          fi
+
+      - name: Install tools
+        run: |
+          tar xzf ~/oss-cad-suite.tgz -C ~
+          echo "$HOME/oss-cad-suite/bin" >> "$GITHUB_PATH"
+          sudo apt-get update -qq && sudo apt-get install -y -qq ccache
+          echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
+          echo "OBJCACHE=ccache" >> "$GITHUB_ENV"
+
+      - name: Tool versions
+        run: |
+          verilator --version
+          z3 --version
+          slang --version
+          yosys -V
+          nproc
+
+      - name: Fetch Accellera UVM ${{ env.UVM_TAG }}
+        run: make uvm UVM_TAG=${UVM_TAG}
+
+      - name: RTL lint (Verilator -Wall)
+        run: make lint
+
+      - name: Strict elaboration of RTL + testbench (slang)
+        run: make slang
+
+      - name: Synthesis check (Yosys)
+        run: make synth
+
+      - name: Formal bounded proof + covers (SymbiYosys)
+        run: make formal
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ hashFiles('rtl/**', 'tb/**', 'sim/**') }}
+          restore-keys: ccache-
+
+      - name: Build simulation model
+        run: make build
+
+      - name: Regression
+        run: make regress SEEDS=${{ github.event.inputs.seeds || '3' }}
+
+      - name: Job summary
+        if: always()
+        run: |
+          if [ -f build/regress/summary.md ]; then cat build/regress/summary.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-results
+          path: |
+            build/regress/summary.md
+            build/regress/summary.json
+            build/regress/coverage_report.md
+            build/regress/*/sim.log
+            build/build.log
+            build/synth.log
+            build/synth_stat.txt
+          if-no-files-found: ignore
