@@ -5,7 +5,7 @@
 #   make build               compile RTL + testbench (one binary, all tests)
 #   make run TEST=<t> SEED=<n> [VERBOSITY=UVM_MEDIUM] [WAVES=1]
 #   make regress [SEEDS=3]   all tests x seeds, merged coverage report
-#   make lint                Verilator -Wall lint of the RTL
+#   make lint                Verilator -Wall lint of the RTL (NUM_CH = 2, 3, 4, 8)
 #   make slang               strict IEEE-1800 elaboration of RTL + testbench (slang)
 #   make synth               Yosys synthesis of the RTL (synthesizability check)
 #   make formal              SymbiYosys bounded proof of the AXI/APB rules + covers
@@ -89,7 +89,10 @@ regress: $(BIN)
 	python3 scripts/run_regression.py --bin $(BIN) --seeds $(SEEDS) --out $(BUILD_DIR)/regress
 
 lint:
-	$(VERILATOR) --lint-only -Wall $(RTL_SRCS) --top-module dma_top
+	@for n in 2 3 4 8; do \
+	  echo "lint NUM_CH=$$n"; \
+	  $(VERILATOR) --lint-only -Wall -GNUM_CH=$$n $(RTL_SRCS) --top-module dma_top || exit 1; \
+	done
 
 slang: | $(UVM_HOME)/src/uvm_pkg.sv
 	slang --top tb_top --timescale 1ns/1ps -Wextra \
