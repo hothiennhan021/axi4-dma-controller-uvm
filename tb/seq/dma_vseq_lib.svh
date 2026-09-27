@@ -629,10 +629,12 @@ class dma_corner_vseq extends dma_base_vseq;
     x.len       = 12;
     run_xfer(x);
 
-    // maximum-length burst run with the longest LEN we can afford in simulation
+    // maximum LEN (65535 words = 4096 bursts, REMAIN counts through every bit)
     x = new_xfer(1);
-    if (!x.randomize() with { len == 4096; max_burst == 15; edge_4k == 0; }) `uvm_fatal("RAND", "randomization failed")
+    if (!x.randomize() with { len == 16'hFFFF; max_burst == 15; edge_4k == 0; }) `uvm_fatal("RAND", "randomization failed")
+    axi_cfg.set_delays(0, 0, 100);
     run_xfer(x, 1);
+    axi_cfg.set_delays(0, 3, 30);
     clear_int(all_int_mask());
   endtask
 endclass

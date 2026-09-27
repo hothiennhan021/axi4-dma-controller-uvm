@@ -22,6 +22,13 @@
 // boundary) is scheduled and resolved lazily.
 // -----------------------------------------------------------------------------
 
+// Report a mismatch with the caller's file/line and count it
+`define SB_ERROR(ID, MSG) \
+  begin \
+    n_errors_reported++; \
+    `uvm_error(ID, MSG) \
+  end
+
 `uvm_analysis_imp_decl(_apb)
 `uvm_analysis_imp_decl(_axi)
 `uvm_analysis_imp_decl(_arreq)
@@ -178,10 +185,6 @@ class dma_scoreboard extends uvm_scoreboard;
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
-  protected function void sb_error(string id, string msg);
-    n_errors_reported++;
-    `uvm_error(id, msg)
-  endfunction
 
   protected function void emit(dma_cov_evt e);
     cov_ap.write(e);
@@ -346,11 +349,11 @@ class dma_scoreboard extends uvm_scoreboard;
     emit(e);
 
     if (!ok) begin
-      if (!t.slverr) sb_error("SB_APB", $sformatf("missing PSLVERR on unmapped access: %s", t.convert2string()));
-      if (!t.write && t.data != 0) sb_error("SB_APB", $sformatf("unmapped read returned non-zero: %s", t.convert2string()));
+      if (!t.slverr) `SB_ERROR("SB_APB", $sformatf("missing PSLVERR on unmapped access: %s", t.convert2string()))
+      if (!t.write && t.data != 0) `SB_ERROR("SB_APB", $sformatf("unmapped read returned non-zero: %s", t.convert2string()))
       return;
     end
-    if (t.slverr) sb_error("SB_APB", $sformatf("unexpected PSLVERR: %s", t.convert2string()));
+    if (t.slverr) `SB_ERROR("SB_APB", $sformatf("unexpected PSLVERR: %s", t.convert2string()))
 
     if (t.write) apb_write(t, is_ch, c, off, now);
     else         apb_read_check(t, is_ch, c, off, now);
@@ -490,8 +493,8 @@ class dma_scoreboard extends uvm_scoreboard;
     bit [31:0] exp = expected_read(t.addr, is_ch, c, off, now);
     n_reads_checked++;
     if (t.data !== exp)
-      sb_error("SB_REG", $sformatf("read 0x%03h: DUT=0x%08h model=0x%08h (diff 0x%08h)",
-                                   t.addr, t.data, exp, t.data ^ exp));
+      `SB_ERROR("SB_REG", $sformatf("read 0x%03h: DUT=0x%08h model=0x%08h (diff 0x%08h)",
+                                   t.addr, t.data, exp, t.data ^ exp))
   endfunction
 
   // ---------------------------------------------------------------------------
@@ -510,21 +513,21 @@ class dma_scoreboard extends uvm_scoreboard;
     tg = now - T;                          // grant edge
 
     if (c >= num_ch) begin
-      sb_error("SB_ARB", $sformatf("ARID=%0d is not a channel: %s", t.id, t.convert2string()));
+      `SB_ERROR("SB_ARB", $sformatf("ARID=%0d is not a channel: %s", t.id, t.convert2string()))
       return;
     end
     m = ch[c];
 
     if (engine_busy)
-      sb_error("SB_ARB", $sformatf("AR for ch%0d while a burst of ch%0d is in flight", c, engine_ch));
+      `SB_ERROR("SB_ARB", $sformatf("AR for ch%0d while a burst of ch%0d is in flight", c, engine_ch))
     if (tg <= last_burst_end && last_burst_end != 0)
-      sb_error("SB_ARB", $sformatf("ch%0d granted @%0t before the previous burst ended @%0t", c, tg, last_burst_end));
+      `SB_ERROR("SB_ARB", $sformatf("ch%0d granted @%0t before the previous burst ended @%0t", c, tg, last_burst_end))
     if (!m.busy.at(tg))
-      sb_error("SB_ARB", $sformatf("AR for idle channel %0d: %s", c, t.convert2string()));
+      `SB_ERROR("SB_ARB", $sformatf("AR for idle channel %0d: %s", c, t.convert2string()))
     if (m.abort_pend.at(tg))
-      sb_error("SB_ABORT", $sformatf("ch%0d granted @%0t after ABORT @%0t", c, tg, m.t_abort));
+      `SB_ERROR("SB_ABORT", $sformatf("ch%0d granted @%0t after ABORT @%0t", c, tg, m.t_abort))
     if (!en.at(tg))
-      sb_error("SB_EN", $sformatf("ch%0d granted @%0t while CTRL.EN=0", c, tg));
+      `SB_ERROR("SB_EN", $sformatf("ch%0d granted @%0t while CTRL.EN=0", c, tg))
 
     // Round robin: first requester after the last grant
     n_req = 0;
@@ -542,23 +545,23 @@ class dma_scoreboard extends uvm_scoreboard;
     end
     n_rr_checked++;
     if (found && exp_c != c)
-      sb_error("SB_RR", $sformatf("round-robin violation: granted ch%0d, expected ch%0d (last grant ch%0d)",
-                                  c, exp_c, last_grant));
+      `SB_ERROR("SB_RR", $sformatf("round-robin violation: granted ch%0d, expected ch%0d (last grant ch%0d)",
+                                  c, exp_c, last_grant))
     last_grant = c;
 
     // Burst shape
     b = next_beats(c, l_len, l_max, l_4k);
     if (t.addr != m.cur_src)
-      sb_error("SB_AR", $sformatf("ch%0d ARADDR=0x%08h expected 0x%08h", c, t.addr, m.cur_src));
+      `SB_ERROR("SB_AR", $sformatf("ch%0d ARADDR=0x%08h expected 0x%08h", c, t.addr, m.cur_src))
     if (t.len != 8'(b - 1))
-      sb_error("SB_AR", $sformatf("ch%0d ARLEN=%0d expected %0d (rem=%0d max_burst=%0d src=0x%08h dst=0x%08h)",
-                                  c, t.len, b - 1, m.rem, m.max_burst, m.cur_src, m.cur_dst));
+      `SB_ERROR("SB_AR", $sformatf("ch%0d ARLEN=%0d expected %0d (rem=%0d max_burst=%0d src=0x%08h dst=0x%08h)",
+                                  c, t.len, b - 1, m.rem, m.max_burst, m.cur_src, m.cur_dst))
     if (t.size != 3'd2)
-      sb_error("SB_AR", $sformatf("ch%0d ARSIZE=%0d expected 2", c, t.size));
+      `SB_ERROR("SB_AR", $sformatf("ch%0d ARSIZE=%0d expected 2", c, t.size))
     if (t.burst != (m.src_inc ? 2'b01 : 2'b00))
-      sb_error("SB_AR", $sformatf("ch%0d ARBURST=%0d expected %0d", c, t.burst, m.src_inc ? 1 : 0));
+      `SB_ERROR("SB_AR", $sformatf("ch%0d ARBURST=%0d expected %0d", c, t.burst, m.src_inc ? 1 : 0))
     if (crosses_4k(t.addr, t.len, t.burst))
-      sb_error("SB_4K", $sformatf("read burst crosses a 4KB boundary: %s", t.convert2string()));
+      `SB_ERROR("SB_4K", $sformatf("read burst crosses a 4KB boundary: %s", t.convert2string()))
 
     m.inflight  = 1;
     m.rd_done   = 0;
@@ -589,7 +592,7 @@ class dma_scoreboard extends uvm_scoreboard;
     resolve(now);
     c = t.id;
     if (c >= num_ch) begin
-      sb_error("SB_AXI", $sformatf("burst with ID %0d is not a channel: %s", t.id, t.convert2string()));
+      `SB_ERROR("SB_AXI", $sformatf("burst with ID %0d is not a channel: %s", t.id, t.convert2string()))
       return;
     end
     m = ch[c];
@@ -609,11 +612,11 @@ class dma_scoreboard extends uvm_scoreboard;
 
     if (t.kind == AXI_READ) begin
       if (!engine_busy || engine_ch != c || !m.inflight || m.rd_done) begin
-        sb_error("SB_AXI", $sformatf("unexpected read burst: %s", t.convert2string()));
+        `SB_ERROR("SB_AXI", $sformatf("unexpected read burst: %s", t.convert2string()))
         return;
       end
       if (t.data.size() != m.exp_beats)
-        sb_error("SB_AXI", $sformatf("ch%0d read burst has %0d beats, expected %0d", c, t.data.size(), m.exp_beats));
+        `SB_ERROR("SB_AXI", $sformatf("ch%0d read burst has %0d beats, expected %0d", c, t.data.size(), m.exp_beats))
       if (t.has_error()) begin
         m.inflight     = 0;
         engine_busy    = 0;
@@ -628,34 +631,34 @@ class dma_scoreboard extends uvm_scoreboard;
 
     // WRITE
     if (!engine_busy || engine_ch != c || !m.inflight || !m.rd_done) begin
-      sb_error("SB_AXI", $sformatf("unexpected write burst: %s", t.convert2string()));
+      `SB_ERROR("SB_AXI", $sformatf("unexpected write burst: %s", t.convert2string()))
       return;
     end
     if (t.addr != m.cur_dst)
-      sb_error("SB_AW", $sformatf("ch%0d AWADDR=0x%08h expected 0x%08h", c, t.addr, m.cur_dst));
+      `SB_ERROR("SB_AW", $sformatf("ch%0d AWADDR=0x%08h expected 0x%08h", c, t.addr, m.cur_dst))
     if (t.len != 8'(m.exp_beats - 1))
-      sb_error("SB_AW", $sformatf("ch%0d AWLEN=%0d expected %0d", c, t.len, m.exp_beats - 1));
+      `SB_ERROR("SB_AW", $sformatf("ch%0d AWLEN=%0d expected %0d", c, t.len, m.exp_beats - 1))
     if (t.size != 3'd2)
-      sb_error("SB_AW", $sformatf("ch%0d AWSIZE=%0d expected 2", c, t.size));
+      `SB_ERROR("SB_AW", $sformatf("ch%0d AWSIZE=%0d expected 2", c, t.size))
     if (t.burst != (m.dst_inc ? 2'b01 : 2'b00))
-      sb_error("SB_AW", $sformatf("ch%0d AWBURST=%0d expected %0d", c, t.burst, m.dst_inc ? 1 : 0));
+      `SB_ERROR("SB_AW", $sformatf("ch%0d AWBURST=%0d expected %0d", c, t.burst, m.dst_inc ? 1 : 0))
     if (crosses_4k(t.addr, t.len, t.burst))
-      sb_error("SB_4K", $sformatf("write burst crosses a 4KB boundary: %s", t.convert2string()));
+      `SB_ERROR("SB_4K", $sformatf("write burst crosses a 4KB boundary: %s", t.convert2string()))
     if (t.data.size() != m.rd_burst.data.size()) begin
-      sb_error("SB_DATA", $sformatf("ch%0d write burst has %0d beats, read burst had %0d",
-                                    c, t.data.size(), m.rd_burst.data.size()));
+      `SB_ERROR("SB_DATA", $sformatf("ch%0d write burst has %0d beats, read burst had %0d",
+                                    c, t.data.size(), m.rd_burst.data.size()))
     end else begin
       foreach (t.data[i]) begin
         n_beats_checked++;
         if (t.data[i] != m.rd_burst.data[i]) begin
-          sb_error("SB_DATA", $sformatf("ch%0d beat %0d: WDATA=0x%08h, read data was 0x%08h (AW 0x%08h)",
-                                        c, i, t.data[i], m.rd_burst.data[i], t.addr));
+          `SB_ERROR("SB_DATA", $sformatf("ch%0d beat %0d: WDATA=0x%08h, read data was 0x%08h (AW 0x%08h)",
+                                        c, i, t.data[i], m.rd_burst.data[i], t.addr))
           break;
         end
       end
     end
     foreach (t.strb[i]) if (t.strb[i] != 4'hF) begin
-      sb_error("SB_DATA", $sformatf("ch%0d beat %0d: WSTRB=0x%0h expected 0xF", c, i, t.strb[i]));
+      `SB_ERROR("SB_DATA", $sformatf("ch%0d beat %0d: WSTRB=0x%0h expected 0xF", c, i, t.strb[i]))
       break;
     end
 
@@ -699,8 +702,8 @@ class dma_scoreboard extends uvm_scoreboard;
         if (irq_vif.irq !== exp_irq) begin
           n_bad++;
           if (n_bad <= 5)
-            sb_error("SB_IRQ", $sformatf("irq=%b expected %b (INT_STATUS=0x%08h INT_ENABLE=0x%08h)",
-                                         irq_vif.irq, exp_irq, int_status.at(now), int_enable.at(now)));
+            `SB_ERROR("SB_IRQ", $sformatf("irq=%b expected %b (INT_STATUS=0x%08h INT_ENABLE=0x%08h)",
+                                         irq_vif.irq, exp_irq, int_status.at(now), int_enable.at(now)))
         end
         // coverage: sample the interrupt causes whenever the set of enabled
         // pending sources changes while irq is asserted
@@ -721,10 +724,10 @@ class dma_scoreboard extends uvm_scoreboard;
   virtual function void check_phase(uvm_phase phase);
     resolve($time + T);
     if (engine_busy)
-      sb_error("SB_EOT", $sformatf("burst of ch%0d still in flight at end of test", engine_ch));
+      `SB_ERROR("SB_EOT", $sformatf("burst of ch%0d still in flight at end of test", engine_ch))
     foreach (ch[c]) begin
       if (ch[c].busy.cur)
-        sb_error("SB_EOT", $sformatf("ch%0d still busy at end of test (REMAIN=%0d)", c, ch[c].rem));
+        `SB_ERROR("SB_EOT", $sformatf("ch%0d still busy at end of test (REMAIN=%0d)", c, ch[c].rem))
     end
   endfunction
 
