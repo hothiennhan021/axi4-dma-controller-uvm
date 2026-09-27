@@ -111,7 +111,8 @@ def write_docs(results, out: Path):
                 f"* Failing tests: {', '.join('`' + t + '`' for t in r['failing_tests']) or '-'}",
                 f"* Formal BMC (protocol properties): {'caught at `' + r['formal_where'] + '`' if r['formal'] else 'not caught (functional bug, outside the protocol property set)'}",
                 "", "## Injected change", "", "```diff", diff.rstrip(), "```", "",
-                "## First error reported", "", "```", r["first_error"] or "-", "```", ""]
+                "## First error reported", "", "```",
+                re.sub(r"^(UVM_\w+) \S+ @ (\d+): \S+ ", r"\1 @ \2 ps ", r["first_error"]) or "-", "```", ""]
         (ddir / f"{r['id']}.md").write_text("\n".join(body))
     (ROOT / "docs" / "bug_hunt_results.md").write_text((out / "bug_hunt.md").read_text())
 

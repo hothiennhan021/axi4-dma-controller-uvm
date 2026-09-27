@@ -109,7 +109,7 @@ formal:
 	cd formal && sby -f dma.sby
 
 bugs: $(BIN)
-	python3 scripts/bug_hunt.py --seeds 2
+	python3 scripts/bug_hunt.py --seeds 2 --docs
 
 clean:
 	rm -rf $(BUILD_DIR)

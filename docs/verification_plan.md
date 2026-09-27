@@ -130,3 +130,11 @@ ending exactly at 4 KB, back-to-back R beats, W before AW, error responses...).
 * Functional coverage 100% of the bins that are reachable (holes explained).
 * RTL line coverage 100%, toggle coverage reviewed.
 * Every injected bug of `scripts/bug_hunt.py` detected by at least one test.
+
+## 8. Status
+
+See the README results table, [`coverage_report.md`](coverage_report.md)
+(merged regression coverage with every coverpoint/cross) and
+[`bug_hunt_results.md`](bug_hunt_results.md) (14/14 injected bugs detected;
+one report per bug in [`bug_reports/`](bug_reports/)).
+

@@ -53,6 +53,20 @@ def main():
     bugs = ROOT / "build" / "bugs" / "bug_hunt.md"
     if bugs.exists():
         body = bugs.read_text().split("\n", 2)[2]     # drop the '# ...' title
+        rows = []
+        for line in body.splitlines():
+            cells = line.split(" | ")
+            # compact the "Failing tests" column: "N: `a`, `b`, ..." -> "N tests"
+            if line.startswith("| BUG-") and len(cells) >= 5:
+                m = re.match(r"(\d+): (.*)", cells[2])
+                if m:
+                    tests = re.findall(r"`(\w+)`", m.group(2))
+                    shown = ", ".join(f"`{t}`" for t in tests[:2])
+                    cells[2] = f"{m.group(1)} ({shown}{', ...' if len(tests) > 2 else ''})"
+                cells[1] = f"[{cells[1]}](docs/bug_reports/{cells[0].strip('| ')}.md)"
+                line = " | ".join(cells)
+            rows.append(line)
+        body = "\n".join(rows) + "\n\nFull table: [`docs/bug_hunt_results.md`](docs/bug_hunt_results.md)."
         text = replace(text, "BUGS", body)
     readme.write_text(text)
     print("README.md updated")
