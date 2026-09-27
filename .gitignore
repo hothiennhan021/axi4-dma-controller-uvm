@@ -1,0 +1,23 @@
+# build / simulation output
+build/
+obj_dir/
+*.vcd
+*.fst
+*.log
+*.jou
+*.pb
+*.wdb
+xsim.dir/
+.Xil/
+formal/dma_bmc/
+formal/dma_cover/
+
+# fetched third-party code
+third_party/
+
+# editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+__pycache__/
