@@ -1,0 +1,9 @@
+`verilator_config
+// Code coverage (line/toggle) is collected for the RTL only: the UVM library
+// and the testbench are excluded.
+coverage_off -file "*uvm*/src/*"
+coverage_off -file "*tb/agents/*"
+coverage_off -file "*tb/ral/*"
+coverage_off -file "*tb/seq/*"
+coverage_off -file "*tb/tests/*"
+coverage_off -file "*tb/top/*"

@@ -1,0 +1,111 @@
+# -----------------------------------------------------------------------------
+# axi4-dma-controller-uvm - Verilator flow
+#
+#   make uvm                 fetch Accellera UVM 2020.3.1 into third_party/
+#   make build               compile RTL + testbench (one binary, all tests)
+#   make run TEST=<t> SEED=<n> [VERBOSITY=UVM_MEDIUM] [WAVES=1]
+#   make regress [SEEDS=3]   all tests x seeds, merged coverage report
+#   make lint                Verilator -Wall lint of the RTL
+#   make slang               strict IEEE-1800 elaboration of RTL + testbench (slang)
+#   make synth               Yosys synthesis of the RTL (synthesizability check)
+#   make formal              SymbiYosys bounded proof of the AXI/APB rules + covers
+#   make bugs                bug-injection campaign (each bug must be caught)
+#   make clean
+#
+# Tools: Verilator >= 5.036 (tested 5.053), z3 on PATH (constraint solver used
+# by Verilator's randomize()), Python 3. slang / yosys for the optional checks.
+# -----------------------------------------------------------------------------
+
+SHELL      := /bin/bash
+ROOT       := $(abspath .)
+UVM_HOME   ?= $(ROOT)/third_party/uvm-core
+UVM_TAG    ?= 2020.3.1
+BUILD_DIR  ?= $(ROOT)/build
+JOBS       ?= $(shell nproc 2>/dev/null || echo 2)
+
+TEST       ?= dma_smoke_test
+SEED       ?= 1
+VERBOSITY  ?= UVM_LOW
+COV        ?= 1
+WAVES      ?= 0
+SEEDS      ?= 3
+PLUSARGS   ?=
+# C++ build of the generated model: the UVM class code dominates compile time
+# and memory; -O0 in 16 translation units keeps a 2-core / 8 GB machine
+# responsive (simulation speed is dominated by UVM, not by the -O level).
+OPT        ?= -O0
+OUTPUT_GROUPS ?= 16
+
+OBJ_DIR    := $(BUILD_DIR)/obj
+BIN        := $(OBJ_DIR)/Vtb_top
+RUN_DIR    := $(BUILD_DIR)/runs/$(TEST)_s$(SEED)
+
+RTL_SRCS   := $(shell sed -n 's/^\(rtl\/.*\.sv\)$$/\1/p' sim/filelist.f)
+TB_SRCS    := $(shell find tb -name '*.sv' -o -name '*.svh')
+
+VERILATOR  ?= verilator
+VFLAGS     := --binary -j $(JOBS) --vpi --assert --timescale 1ns/1ps \
+              -Wno-fatal -Wno-lint -Wno-style \
+              +define+UVM_HDL_NO_DPI \
+              +incdir+$(UVM_HOME)/src $(UVM_HOME)/src/uvm_pkg.sv \
+              -f sim/filelist.f --top-module tb_top \
+              -CFLAGS -I$(UVM_HOME)/src/dpi $(ROOT)/sim/verilator/uvm_dpi_verilator.cc \
+              -Mdir $(OBJ_DIR) -o Vtb_top \
+              --output-groups $(OUTPUT_GROUPS) -MAKEFLAGS "OPT_FAST=$(OPT) OPT_SLOW=$(OPT)"
+ifeq ($(COV),1)
+VFLAGS     += --coverage-line --coverage-toggle --coverage-user sim/verilator/coverage.vlt
+endif
+ifeq ($(WAVES),1)
+VFLAGS     += --trace-vcd
+endif
+
+.PHONY: all uvm build run regress lint slang synth formal bugs clean help
+
+all: build
+
+help:
+	@sed -n '2,17p' Makefile
+
+$(UVM_HOME)/src/uvm_pkg.sv:
+	git clone --depth 1 --branch $(UVM_TAG) https://github.com/accellera-official/uvm-core.git $(UVM_HOME)
+
+uvm: $(UVM_HOME)/src/uvm_pkg.sv
+
+$(BIN): $(RTL_SRCS) $(TB_SRCS) sim/filelist.f sim/verilator/uvm_dpi_verilator.cc sim/verilator/coverage.vlt | $(UVM_HOME)/src/uvm_pkg.sv
+	@mkdir -p $(BUILD_DIR)
+	$(VERILATOR) $(VFLAGS) 2>&1 | tee $(BUILD_DIR)/build.log
+	@test -x $(BIN)
+
+build: $(BIN)
+
+run: $(BIN)
+	@mkdir -p $(RUN_DIR)
+	cd $(RUN_DIR) && $(BIN) +UVM_TESTNAME=$(TEST) +verilator+seed+$(SEED) \
+	    +UVM_VERBOSITY=$(VERBOSITY) +UVM_NO_RELNOTES $(if $(filter 1,$(WAVES)),+WAVES,) \
+	    +verilator+coverage+file+coverage.dat $(PLUSARGS) 2>&1 | tee sim.log
+	@grep -q "\*\* TEST PASSED \*\*" $(RUN_DIR)/sim.log
+
+regress: $(BIN)
+	python3 scripts/run_regression.py --bin $(BIN) --seeds $(SEEDS) --out $(BUILD_DIR)/regress
+
+lint:
+	$(VERILATOR) --lint-only -Wall $(RTL_SRCS) --top-module dma_top
+
+slang: | $(UVM_HOME)/src/uvm_pkg.sv
+	slang --top tb_top --timescale 1ns/1ps -Wextra \
+	    +define+UVM_HDL_NO_DPI +incdir+$(UVM_HOME)/src $(UVM_HOME)/src/uvm_pkg.sv -f sim/filelist.f
+
+synth:
+	@mkdir -p $(BUILD_DIR)
+	yosys -m slang -q -l $(BUILD_DIR)/synth.log -p "read_slang $(RTL_SRCS) --top dma_top; \
+	    synth -top dma_top; check -assert; tee -o $(BUILD_DIR)/synth_stat.txt stat"
+	@grep -A3 "cells" $(BUILD_DIR)/synth_stat.txt | head -4
+
+formal:
+	cd formal && sby -f dma.sby
+
+bugs: $(BIN)
+	python3 scripts/bug_hunt.py --seeds 2
+
+clean:
+	rm -rf $(BUILD_DIR)
