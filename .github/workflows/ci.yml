@@ -74,7 +74,7 @@ jobs:
       - name: Synthesis check (Yosys)
         run: make synth
 
-      - name: Formal bounded proof + covers (SymbiYosys)
+      - name: Formal proof (unbounded, PDR) + covers (SymbiYosys)
         run: make formal
 
       - name: Cache ccache
@@ -109,3 +109,61 @@ jobs:
             build/synth.log
             build/synth_stat.txt
           if-no-files-found: ignore
+
+  # The RTL and the testbench are parameterised by the number of channels:
+  # rebuild and rerun the regression for the smallest and the largest
+  # supported configuration.
+  num-ch-sweep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        num_ch: [2, 8]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache OSS CAD Suite
+        id: cache-ocs
+        uses: actions/cache@v5
+        with:
+          path: ~/oss-cad-suite.tgz
+          key: oss-cad-suite-${{ env.OSS_CAD_DATE }}
+
+      - name: Download OSS CAD Suite
+        if: steps.cache-ocs.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          d=${OSS_CAD_DATE//-/}
+          url=https://github.com/YosysHQ/oss-cad-suite-build/releases/download/${OSS_CAD_DATE}/oss-cad-suite-linux-x64-${d}.tgz
+          if ! curl -fsSL -o ~/oss-cad-suite.tgz "$url"; then
+            url=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+                    https://api.github.com/repos/YosysHQ/oss-cad-suite-build/releases/latest \
+                  | grep -o 'https://[^"]*oss-cad-suite-linux-x64-[0-9]*\.tgz' | head -1)
+            curl -fsSL -o ~/oss-cad-suite.tgz "$url"
+          fi
+
+      - name: Install tools
+        run: |
+          tar xzf ~/oss-cad-suite.tgz -C ~
+          echo "$HOME/oss-cad-suite/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch Accellera UVM ${{ env.UVM_TAG }}
+        run: make uvm UVM_TAG=${UVM_TAG}
+
+      - name: Strict elaboration (slang), NUM_CH=${{ matrix.num_ch }}
+        run: make slang NUM_CH=${{ matrix.num_ch }}
+
+      - name: Build simulation model, NUM_CH=${{ matrix.num_ch }}
+        run: make build NUM_CH=${{ matrix.num_ch }} COV=0
+
+      - name: Regression, NUM_CH=${{ matrix.num_ch }}
+        run: make regress NUM_CH=${{ matrix.num_ch }} SEEDS=2
+
+      - name: Job summary
+        if: always()
+        run: |
+          f=build_ch${{ matrix.num_ch }}/regress/summary.md
+          if [ -f "$f" ]; then { echo "## NUM_CH=${{ matrix.num_ch }}"; cat "$f"; } >> "$GITHUB_STEP_SUMMARY"; fi
+

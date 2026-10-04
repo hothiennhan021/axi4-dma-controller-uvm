@@ -79,6 +79,14 @@ MUTATIONS = [
      "    src_room = 11'd1024 - {1'b0, d_src[11:2]};",
      "    src_room = 11'd1023 - {1'b0, d_src[11:2]};",
      "Off-by-one in the source 4 KB room computation"),
+    ("BUG-15", "rtl/dma_axi_engine.sv",
+     "      aw_pend   <= 1'b0;\n      w_pend    <= 1'b0;\n",
+     "      aw_pend   <= 1'b0;\n",
+     "Write-data pending flag not cleared by reset (WVALID survives a reset in the middle of a burst)"),
+    ("BUG-16", "rtl/dma_channel.sv",
+     "      rem        <= '0;\n",
+     "",
+     "REMAIN counter not cleared by reset (STAT reports a stale count after reset)"),
 ]
 
 
@@ -109,7 +117,7 @@ def write_docs(results, out: Path):
                 f"* Detected in simulation: {'yes' if r['detected'] else '**no**'}"
                 + (f" - {r.get('n_failed', 0)}/{r.get('n_runs', 0)} runs failed" if r['detected'] else ""),
                 f"* Failing tests: {', '.join('`' + t + '`' for t in r['failing_tests']) or '-'}",
-                f"* Formal BMC (protocol properties): {'caught at `' + r['formal_where'] + '`' if r['formal'] else 'not caught (functional bug, outside the protocol property set)'}",
+                f"* Formal proof (protocol properties): {'caught at `' + r['formal_where'] + '`' if r['formal'] else 'not caught (functional bug, outside the protocol property set)'}",
                 "", "## Injected change", "", "```diff", diff.rstrip(), "```", "",
                 "## First error reported", "", "```",
                 re.sub(r"^(UVM_\w+) \S+ @ (\d+): \S+ ", r"\1 @ \2 ps ", r["first_error"]) or "-", "```", ""]
@@ -145,13 +153,13 @@ def main():
         (work / "mutation.diff").write_text(diff)
         # Formal (bounded proof of the protocol properties) - seconds per bug
         fdir = work / "src" / "formal"
-        shutil.rmtree(fdir / "dma_bmc", ignore_errors=True)
-        f = subprocess.run(["sby", "-f", "dma.sby", "bmc"], cwd=fdir, stdout=subprocess.PIPE,
+        shutil.rmtree(fdir / "dma_prove", ignore_errors=True)
+        f = subprocess.run(["sby", "-f", "dma.sby", "prove"], cwd=fdir, stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, text=True)
         formal_fail = "DONE (FAIL" in f.stdout
         m_line = re.search(r"failed assertion .* at (\S+)", f.stdout)
         formal_where = m_line.group(1) if m_line else ""
-        print(f"    formal BMC: {'FAIL (bug caught)' if formal_fail else 'pass'} {formal_where}", flush=True)
+        print(f"    formal: {'FAIL (bug caught)' if formal_fail else 'pass'} {formal_where}", flush=True)
 
         if args.formal_only:
             r = dict(prev.get(bug_id, {"id": bug_id, "desc": desc, "file": rel, "detected": False,
@@ -189,8 +197,8 @@ def main():
 
     lines = ["# Bug-injection results", "",
              f"Simulation detected {sum(r['detected'] for r in results)}/{len(results)} injected bugs; "
-             f"formal BMC (protocol properties only) detected {sum(r['formal'] for r in results)}/{len(results)}.", "",
-             "| ID | Injected bug | Failing tests | Formal BMC | First simulation error |", "|---|---|---|---|---|"]
+             f"formal proof (protocol properties only) detected {sum(r['formal'] for r in results)}/{len(results)}.", "",
+             "| ID | Injected bug | Failing tests | Formal | First simulation error |", "|---|---|---|---|---|"]
     for r in results:
         det = f"{len(r['failing_tests'])}: " + ", ".join(f"`{t}`" for t in r["failing_tests"]) if r["detected"] else "**MISSED**"
         err = r["first_error"].replace("|", "\\|")

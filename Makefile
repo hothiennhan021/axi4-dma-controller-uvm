@@ -2,13 +2,14 @@
 # axi4-dma-controller-uvm - Verilator flow
 #
 #   make uvm                 fetch Accellera UVM 2020.3.1 into third_party/
-#   make build               compile RTL + testbench (one binary, all tests)
+#   make build [NUM_CH=n]    compile RTL + testbench (one binary, all tests);
+#                            NUM_CH=2..8 builds a separate model in build_ch<n>/
 #   make run TEST=<t> SEED=<n> [VERBOSITY=UVM_MEDIUM] [WAVES=1]
 #   make regress [SEEDS=3]   all tests x seeds, merged coverage report
 #   make lint                Verilator -Wall lint of the RTL (NUM_CH = 2, 3, 4, 8)
 #   make slang               strict IEEE-1800 elaboration of RTL + testbench (slang)
 #   make synth               Yosys synthesis of the RTL (synthesizability check)
-#   make formal              SymbiYosys bounded proof of the AXI/APB rules + covers
+#   make formal              SymbiYosys unbounded proof (PDR) of the AXI/APB rules + covers
 #   make bugs                bug-injection campaign (each bug must be caught)
 #   make clean
 #
@@ -20,7 +21,8 @@ SHELL      := /bin/bash
 ROOT       := $(abspath .)
 UVM_HOME   ?= $(ROOT)/third_party/uvm-core
 UVM_TAG    ?= 2020.3.1
-BUILD_DIR  ?= $(ROOT)/build
+NUM_CH     ?= 4
+BUILD_DIR  ?= $(ROOT)/build$(if $(filter-out 4,$(NUM_CH)),_ch$(NUM_CH),)
 JOBS       ?= $(shell nproc 2>/dev/null || echo 2)
 
 TEST       ?= dma_smoke_test
@@ -46,7 +48,7 @@ TB_SRCS    := $(shell find tb -name '*.sv' -o -name '*.svh')
 VERILATOR  ?= verilator
 VFLAGS     := --binary -j $(JOBS) --vpi --assert --timescale 1ns/1ps \
               -Wno-fatal -Wno-lint -Wno-style \
-              +define+UVM_HDL_NO_DPI \
+              +define+UVM_HDL_NO_DPI +define+DMA_NUM_CH=$(NUM_CH) \
               +incdir+$(UVM_HOME)/src $(UVM_HOME)/src/uvm_pkg.sv \
               -f sim/filelist.f --top-module tb_top \
               -CFLAGS -I$(UVM_HOME)/src/dpi $(ROOT)/sim/verilator/uvm_dpi_verilator.cc \
@@ -97,7 +99,7 @@ lint:
 slang: | $(UVM_HOME)/src/uvm_pkg.sv
 	slang --top dma_top -Wextra -Werror $(RTL_SRCS)
 	slang --top tb_top --timescale 1ns/1ps \
-	    +define+UVM_HDL_NO_DPI +incdir+$(UVM_HOME)/src $(UVM_HOME)/src/uvm_pkg.sv -f sim/filelist.f
+	    +define+UVM_HDL_NO_DPI +define+DMA_NUM_CH=$(NUM_CH) +incdir+$(UVM_HOME)/src $(UVM_HOME)/src/uvm_pkg.sv -f sim/filelist.f
 
 synth:
 	@mkdir -p $(BUILD_DIR)
@@ -106,7 +108,7 @@ synth:
 	@grep -A3 "cells" $(BUILD_DIR)/synth_stat.txt | head -4
 
 formal:
-	cd formal && sby -f dma.sby
+	cd formal && sby -f dma.sby prove cover
 
 bugs: $(BIN)
 	python3 scripts/bug_hunt.py --seeds 2 --docs
