@@ -24,5 +24,5 @@
 ## First error reported
 
 ```
-UVM_ERROR @ 6655000 ps [SB_AXI] unexpected write burst: AXI_WRITE id=3 addr=0x83d41e1c len=13 size=2 burst=     INCR beats=14
+UVM_ERROR @ 6655000 ps [SB_AXI] unexpected write burst: AXI_WRITE id=3 addr=0x83d41e1c len=13 size=2 burst=INCR beats=14
 ```

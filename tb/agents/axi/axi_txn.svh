@@ -56,9 +56,14 @@ class axi_txn extends uvm_sequence_item;
 
   virtual function string convert2string();
     string s;
+    string bt;
+    case (burst)
+      2'b00:   bt = "FIXED";
+      2'b01:   bt = "INCR";
+      default: bt = "WRAP/RSVD";
+    endcase
     s = $sformatf("%s id=%0d addr=0x%08h len=%0d size=%0d burst=%s",
-                  kind.name(), id, addr, len, size,
-                  burst == 2'b00 ? "FIXED" : (burst == 2'b01 ? "INCR" : "WRAP/RSVD"));
+                  kind.name(), id, addr, len, size, bt);
     if (kind != AXI_AR_REQ) begin
       s = {s, $sformatf(" beats=%0d", data.size())};
       if (has_error()) s = {s, $sformatf(" RESP=%0d", first_error())};

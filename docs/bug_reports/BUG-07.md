@@ -23,5 +23,5 @@
 ## First error reported
 
 ```
-UVM_ERROR @ 1095000 ps [AXI_SLV_WLAST] WLAST after 15 beats but AWLEN=15 (16 beats): AXI_WRITE id=0 addr=0x80026d30 len=15 size=2 burst=     INCR beats=0
+UVM_ERROR @ 1095000 ps [AXI_SLV_WLAST] WLAST after 15 beats but AWLEN=15 (16 beats): AXI_WRITE id=0 addr=0x80026d30 len=15 size=2 burst=INCR beats=0
 ```
