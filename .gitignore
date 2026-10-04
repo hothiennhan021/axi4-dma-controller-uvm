@@ -1,5 +1,6 @@
 # build / simulation output
 build/
+build_ch*/
 obj_dir/
 *.vcd
 *.fst
@@ -9,8 +10,8 @@ obj_dir/
 *.wdb
 xsim.dir/
 .Xil/
-formal/dma_bmc/
-formal/dma_cover/
+formal/dma/
+formal/dma_*/
 
 # fetched third-party code
 third_party/
