@@ -335,8 +335,8 @@ class dma_abort_vseq extends dma_base_vseq;
         `uvm_error("ABORT", $sformatf("START+ABORT: STAT=0x%08h (len=%0d)", stat, x.len))
     end
     // ABORT on an idle channel is ignored
-    abort_channel(2);
-    read_stat(2, stat);
+    abort_channel(num_ch - 1);
+    read_stat(num_ch - 1, stat);
   endtask
 endclass
 
@@ -528,7 +528,7 @@ class dma_corner_vseq extends dma_base_vseq;
     clear_int(all_int_mask());
 
     // single word, single-beat bursts, every MAX_BURST value
-    x = new_xfer(2);
+    x = new_xfer(num_ch - 1);
     if (!x.randomize() with { len == 1; }) `uvm_fatal("RAND", "randomization failed")
     run_xfer(x);
     for (int unsigned mb = 0; mb < 16; mb++) begin
@@ -620,12 +620,12 @@ class dma_corner_vseq extends dma_base_vseq;
     clear_int(all_int_mask());
 
     // 32-bit address wrap: source ends at 0xFFFF_FFFC and continues at 0x0
-    x = new_xfer(3);
+    x = new_xfer(num_ch - 1);
     x.src_inc   = 1;
     x.dst_inc   = 1;
     x.max_burst = 15;
     x.src       = 32'hFFFF_FFF0;
-    x.dst       = dma_xfer::dst_base(3) + 32'h100;
+    x.dst       = dma_xfer::dst_base(num_ch - 1) + 32'h100;
     x.len       = 12;
     run_xfer(x);
 
@@ -656,7 +656,8 @@ class dma_apb_err_vseq extends dma_base_vseq;
       s.aligned = 1;
       case (kind)
         0: s.addr = 12'h014 + 12'(4 * $urandom_range(58, 0));             // global hole 0x014-0x0FC
-        1: s.addr = 12'h100 + 12'(num_ch * 32) + 12'($urandom_range((8 - num_ch) * 8 - 1, 0) * 4); // absent channels
+        1: if (num_ch < 8) s.addr = 12'h100 + 12'(num_ch * 32) + 12'($urandom_range((8 - num_ch) * 8 - 1, 0) * 4); // absent channels
+           else            s.addr = 12'h200 + 12'(4 * $urandom_range(895, 0));
         2: s.addr = 12'h200 + 12'(4 * $urandom_range(895, 0));            // 0x200-0xFFC
         3: s.addr = 12'h100 + 12'(32 * $urandom_range(num_ch - 1, 0)) + 12'h18 + 12'(4 * $urandom_range(1, 0)); // channel holes
         default: begin                                                    // misaligned
@@ -774,15 +775,84 @@ class dma_stress_vseq extends dma_base_vseq;
     fork
       bg_thread();
       begin
-        fork
-          channel_thread(0);
-          channel_thread(1);
-          channel_thread(2);
-          channel_thread(3);
-        join
+        for (int unsigned c = 0; c < num_ch; c++) begin
+          automatic int unsigned cc = c;
+          fork
+            channel_thread(cc);
+          join_none
+        end
+        wait fork;
         stop_bg = 1;
       end
     join
     clear_int(all_int_mask());
   endtask
 endclass
+
+// Reset in the middle of operation ---------------------------------------------------------------------
+class dma_reset_vseq extends dma_base_vseq;
+  `uvm_object_utils(dma_reset_vseq)
+  int unsigned n_iter = 12;
+  function new(string name = "dma_reset_vseq");
+    super.new(name);
+  endfunction
+
+  virtual task body();
+    uvm_reg_data_t v;
+    for (int unsigned it = 0; it < n_iter; it++) begin
+      int unsigned mode   = it % 4;      // 0/3: on an edge or between edges, 1: right after START, 2: during an APB access
+      int unsigned hold   = $urandom_range(12, 1);
+      int unsigned n_act  = (it % 5 == 4) ? 0 : $urandom_range(num_ch, 1);
+      bit          en_on  = (it % 6 != 5);
+
+      axi_cfg.set_delays(0, $urandom_range(8, 0), $urandom_range(80, 10));
+      set_int_enable(all_int_mask());
+      set_enable(en_on);
+      for (int unsigned c = 0; c < n_act; c++) begin
+        dma_xfer x = new_xfer(c);
+        if (!x.randomize() with { len inside {[100:900]}; }) `uvm_fatal("RAND", "randomization failed")
+        program_channel(x);
+        start_channel(c);
+      end
+      if (mode == 3 && n_act > 0) abort_channel(0);
+      wait_cycles(mode == 1 ? $urandom_range(3, 0) : $urandom_range(600, 5));
+
+      `uvm_info("VSEQ", $sformatf("reset #%0d: %0d channel(s) started, EN=%0b, mode %0d, %0d cycle(s)",
+                                  it, n_act, en_on, mode, hold), UVM_LOW)
+      if (mode == 2) begin
+        fork
+          begin
+            apb_rw_seq s = apb_rw_seq::type_id::create("s_during_reset");
+            s.addr  = 12'h114;
+            s.write = 0;
+            s.data  = 0;
+            s.start(p_sequencer.apb_sqr, this);   // may be cut by the reset: result ignored
+          end
+          apply_reset(hold, 1'b1);
+        join
+      end else begin
+        apply_reset(hold, $urandom_range(1, 0));
+      end
+
+      // every register is back at its reset value (the scoreboard compares
+      // each read against its own reset model as well)
+      begin
+        uvm_reg_hw_reset_seq rs = uvm_reg_hw_reset_seq::type_id::create("hw_reset_seq");
+        rs.model = rm;
+        rs.start(null, this);
+      end
+      if (irq_vif.irq !== 1'b0) `uvm_error("RESET", "irq high after reset")
+      rd(rm.BUSY, v);
+      if (v != 0) `uvm_error("RESET", $sformatf("BUSY=0x%0h after reset", v))
+
+      // and the controller works normally afterwards
+      axi_cfg.set_delays(0, 3, 30);
+      set_enable(1);
+      begin
+        dma_xfer x = rand_xfer($urandom_range(num_ch - 1, 0));
+        run_xfer(x);
+      end
+    end
+  endtask
+endclass
+

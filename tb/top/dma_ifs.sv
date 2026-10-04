@@ -60,3 +60,11 @@ endinterface : axi_if
 interface irq_if (input logic clk, input logic rst_n);
   logic irq;
 endinterface : irq_if
+
+
+// Reset of the whole bench. tb_top applies the power-on reset; tests may
+// assert it again at any time through the virtual interface
+// (dma_base_vseq::apply_reset): asynchronous assertion, synchronous release.
+interface rst_if (input logic clk);
+  logic rst_n;
+endinterface : rst_if

@@ -16,6 +16,7 @@ class dma_base_vseq extends uvm_sequence;
   axi_slave_cfg  axi_cfg;
   int unsigned   num_ch;
   virtual irq_if irq_vif;
+  virtual rst_if rst_vif;
 
   // default poll timeout in clock cycles
   int unsigned   timeout_cycles = 400000;
@@ -30,6 +31,7 @@ class dma_base_vseq extends uvm_sequence;
     axi_cfg = p_sequencer.axi_cfg;
     num_ch  = p_sequencer.cfg.num_ch;
     irq_vif = p_sequencer.irq_vif;
+    rst_vif = p_sequencer.rst_vif;
   endtask
 
   // ---------------------------------------------------------------------------
@@ -49,6 +51,25 @@ class dma_base_vseq extends uvm_sequence;
 
   task wait_cycles(int unsigned n);
     repeat (n) @(posedge irq_vif.clk);
+  endtask
+
+  // Assert reset for 'cycles' clock cycles - on a rising edge or between two
+  // edges (asynchronous assertion) - and release it on a rising edge. The
+  // register model mirror is reset afterwards; the scoreboard follows rst_n.
+  task apply_reset(int unsigned cycles, bit between_edges);
+    @(posedge rst_vif.clk);
+    if (between_edges) begin
+      #(3ns);
+      rst_vif.rst_n = 1'b0;
+    end else begin
+      rst_vif.rst_n <= 1'b0;
+    end
+    repeat (cycles) @(posedge rst_vif.clk);
+    rst_vif.rst_n <= 1'b1;
+    @(posedge rst_vif.clk);
+    rm.reset();
+    `uvm_info("VSEQ", $sformatf("reset applied for %0d cycle(s)%s", cycles,
+                                between_edges ? " (asserted between clock edges)" : ""), UVM_MEDIUM)
   endtask
 
   task set_enable(bit en);

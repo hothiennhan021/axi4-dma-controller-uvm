@@ -72,6 +72,7 @@ class dma_env extends uvm_env;
     vsqr.axi_cfg  = cfg.axi_cfg;
     vsqr.cfg      = cfg;
     vsqr.irq_vif  = cfg.irq_vif;
+    vsqr.rst_vif  = cfg.rst_vif;
   endfunction
 
 endclass : dma_env

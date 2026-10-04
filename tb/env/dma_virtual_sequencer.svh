@@ -11,6 +11,7 @@ class dma_virtual_sequencer extends uvm_sequencer;
   axi_slave_cfg  axi_cfg;
   dma_env_cfg    cfg;
   virtual irq_if irq_vif;
+  virtual rst_if rst_vif;
 
   function new(string name, uvm_component parent);
     super.new(name, parent);

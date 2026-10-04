@@ -26,5 +26,6 @@
 `DMA_TEST(dma_corner_test,        dma_corner_vseq)
 `DMA_TEST(dma_apb_err_test,       dma_apb_err_vseq)
 `DMA_TEST(dma_stress_test,        dma_stress_vseq)
+`DMA_TEST(dma_reset_test,         dma_reset_vseq)
 
 `undef DMA_TEST

@@ -146,7 +146,7 @@ class dma_scoreboard extends uvm_scoreboard;
 
   // statistics
   int unsigned n_apb_checked, n_reads_checked, n_bursts_checked, n_beats_checked;
-  int unsigned n_rr_checked, n_irq_cycles, n_errors_reported;
+  int unsigned n_rr_checked, n_irq_cycles, n_errors_reported, n_resets;
 
   function new(string name, uvm_component parent);
     super.new(name, parent);
@@ -689,9 +689,77 @@ class dma_scoreboard extends uvm_scoreboard;
   // irq pin: checked every cycle
   // ---------------------------------------------------------------------------
   virtual task run_phase(uvm_phase phase);
+    if (irq_vif == null) return;
+    fork
+      irq_check();
+      reset_watch();
+    join
+  endtask
+
+  // Reset (asynchronous): the DUT returns to its reset state at the edge of
+  // rst_n; so does the model.
+  protected task reset_watch();
+    @(posedge irq_vif.clk iff irq_vif.rst_n === 1'b1);   // end of the power-on reset
+    forever begin
+      @(negedge irq_vif.rst_n);
+      model_reset($time);
+    end
+  endtask
+
+  protected function void model_reset(time t);
+    dma_cov_evt e;
+    int unsigned n_busy = 0;
+    resolve(t);                               // aborts that completed before the reset
+    foreach (ch[c]) if (ch[c].busy.cur) n_busy++;
+    begin
+      e           = new_evt(EV_RESET, engine_busy ? engine_ch : 0);
+      e.phase     = !engine_busy ? 0 : (ch[engine_ch].rd_done ? 2 : 1);
+      e.n_busy    = n_busy;
+      e.mid_cycle = (t % T) != (T / 2);      // rising edges are at T/2 + k*T
+      e.en        = en.cur;
+      emit(e);
+      n_resets++;
+      `uvm_info("SB", $sformatf("reset @%0t: %0d channel(s) busy, engine %s", t, n_busy,
+                                engine_busy ? $sformatf("on ch%0d", engine_ch) : "idle"), UVM_MEDIUM)
+    end
+    foreach (ch[c]) begin
+      dma_ch_model m = ch[c];
+      m.cur_src     = 0;
+      m.cur_dst     = 0;
+      m.rem         = 0;
+      m.max_burst   = 4'hF;
+      m.src_inc     = 1;
+      m.dst_inc     = 1;
+      m.s_done      = 0;
+      m.s_err       = 0;
+      m.s_aborted   = 0;
+      m.s_err_wr    = 0;
+      m.s_err_resp  = 0;
+      m.inflight    = 0;
+      m.rd_done     = 0;
+      m.abort_sched = 0;
+      m.busy.set(1'b0, t);
+      m.abort_pend.set(1'b0, t);
+      m.update_stat(t);
+      sh_cfg[c] = 6'h3F;
+      sh_src[c] = 0;
+      sh_dst[c] = 0;
+      sh_len[c] = 0;
+    end
+    en.set(1'b0, t);
+    int_status.set(32'h0, t);
+    int_enable.set(32'h0, t);
+    int_set_mask   = 0;
+    int_set_t      = t;
+    last_grant     = num_ch - 1;
+    engine_busy    = 0;
+    last_burst_end = t;
+    irq_srcs_q     = 0;
+  endfunction
+
+  protected task irq_check();
     int unsigned n_bad;
     n_bad = 0;
-    if (irq_vif == null) return;
     forever begin
       @(posedge irq_vif.clk);
       if (irq_vif.rst_n !== 1'b1) continue;
@@ -737,6 +805,7 @@ class dma_scoreboard extends uvm_scoreboard;
     s = {s, $sformatf("\n  AXI bursts checked    : %0d (%0d data beats compared)", n_bursts_checked, n_beats_checked)};
     s = {s, $sformatf("\n  grants checked (RR)   : %0d", n_rr_checked)};
     s = {s, $sformatf("\n  irq cycles checked    : %0d", n_irq_cycles)};
+    s = {s, $sformatf("\n  resets modelled       : %0d", n_resets)};
     foreach (ch[c])
       s = {s, $sformatf("\n  ch%0d: start=%0d done=%0d err=%0d abort=%0d bursts=%0d words=%0d",
                         c, ch[c].n_start, ch[c].n_done, ch[c].n_err, ch[c].n_abort,

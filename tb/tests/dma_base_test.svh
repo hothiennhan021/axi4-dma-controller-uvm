@@ -30,11 +30,15 @@ class dma_base_test extends uvm_test;
     virtual apb_if apb_vif;
     virtual axi_if axi_vif;
     virtual irq_if irq_vif;
+    virtual rst_if rst_vif;
+    int unsigned   n_ch;
     super.build_phase(phase);
 
     if (!uvm_config_db#(virtual apb_if)::get(this, "", "apb_vif", apb_vif)) `uvm_fatal("NOVIF", "apb_vif")
     if (!uvm_config_db#(virtual axi_if)::get(this, "", "axi_vif", axi_vif)) `uvm_fatal("NOVIF", "axi_vif")
     if (!uvm_config_db#(virtual irq_if)::get(this, "", "irq_vif", irq_vif)) `uvm_fatal("NOVIF", "irq_vif")
+    if (!uvm_config_db#(virtual rst_if)::get(this, "", "rst_vif", rst_vif)) `uvm_fatal("NOVIF", "rst_vif")
+    if (!uvm_config_db#(int unsigned)::get(this, "", "num_ch", n_ch)) n_ch = 4;
 
     cfg             = dma_env_cfg::type_id::create("cfg");
     cfg.apb_cfg     = apb_agent_cfg::type_id::create("apb_cfg");
@@ -43,6 +47,8 @@ class dma_base_test extends uvm_test;
     cfg.apb_cfg.vif = apb_vif;
     cfg.axi_cfg.vif = axi_vif;
     cfg.irq_vif     = irq_vif;
+    cfg.rst_vif     = rst_vif;
+    cfg.num_ch      = n_ch;
     configure();
 
     uvm_config_db#(dma_env_cfg)::set(this, "env", "cfg", cfg);

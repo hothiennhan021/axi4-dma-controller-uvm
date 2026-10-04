@@ -23,6 +23,7 @@ class axi_slave_driver extends uvm_component;
   protected mailbox #(axi_txn) rd_mbx;
   protected mailbox #(axi_txn) aw_mbx;
   protected mailbox #(axi_txn) wb_mbx;   // W beats of one burst (data/strb only)
+  int unsigned n_resets;
 
   function new(string name, uvm_component parent);
     super.new(name, parent);
@@ -40,16 +41,33 @@ class axi_slave_driver extends uvm_component;
     vif = cfg.vif;
   endfunction
 
+  // The channel threads run until reset is asserted; then every pending
+  // request and response is dropped, the outputs go idle and the threads
+  // restart after reset is released.
   virtual task run_phase(uvm_phase phase);
-    idle_outputs();
-    @(posedge vif.clk iff vif.rst_n === 1'b1);
-    fork
-      ar_thread();
-      r_thread();
-      aw_thread();
-      w_thread();
-      b_thread();
-    join
+    forever begin
+      idle_outputs();
+      rd_mbx = new();
+      aw_mbx = new();
+      wb_mbx = new();
+      @(posedge vif.clk iff vif.rst_n === 1'b1);
+      fork
+        begin
+          fork
+            ar_thread();
+            r_thread();
+            aw_thread();
+            w_thread();
+            b_thread();
+          join
+        end
+        begin
+          @(negedge vif.rst_n);
+        end
+      join_any
+      disable fork;
+      n_resets++;
+    end
   endtask
 
   protected function void idle_outputs();

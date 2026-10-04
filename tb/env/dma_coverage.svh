@@ -13,7 +13,7 @@ class dma_coverage extends uvm_subscriber #(dma_cov_evt);
   // ---------------------------------------------------------------------------
   covergroup cg_start with function sample(dma_cov_evt e);
     option.per_instance = 1;
-    cp_ch: coverpoint e.ch { bins ch[] = {[0:3]}; }
+    cp_ch: coverpoint e.ch { bins ch[] = {[0:`DMA_NUM_CH-1]}; }
     cp_len: coverpoint e.len {
       bins zero      = {0};
       bins one       = {1};
@@ -59,7 +59,7 @@ class dma_coverage extends uvm_subscriber #(dma_cov_evt);
       bins short_w = {[1:2]};
       bins long_w  = {[3:$]};
     }
-    cp_ch: coverpoint e.ch { bins ch[] = {[0:3]}; }
+    cp_ch: coverpoint e.ch { bins ch[] = {[0:`DMA_NUM_CH-1]}; }
     x_dir_resp: cross cp_dir, cp_resp;
     x_dir_type: cross cp_dir, cp_type;
     x_type_beats: cross cp_type, cp_beats;
@@ -76,8 +76,8 @@ class dma_coverage extends uvm_subscriber #(dma_cov_evt);
   // ---------------------------------------------------------------------------
   covergroup cg_grant with function sample(dma_cov_evt e);
     option.per_instance = 1;
-    cp_ch: coverpoint e.ch { bins ch[] = {[0:3]}; }
-    cp_n_req: coverpoint e.n_req { bins n[] = {[1:4]}; }
+    cp_ch: coverpoint e.ch { bins ch[] = {[0:`DMA_NUM_CH-1]}; }
+    cp_n_req: coverpoint e.n_req { bins n[] = {[1:`DMA_NUM_CH]}; }
     x_ch_nreq: cross cp_ch, cp_n_req;
   endgroup
 
@@ -86,7 +86,7 @@ class dma_coverage extends uvm_subscriber #(dma_cov_evt);
   // ---------------------------------------------------------------------------
   covergroup cg_finish with function sample(dma_cov_evt e);
     option.per_instance = 1;
-    cp_ch: coverpoint e.ch { bins ch[] = {[0:3]}; }
+    cp_ch: coverpoint e.ch { bins ch[] = {[0:`DMA_NUM_CH-1]}; }
     cp_fin: coverpoint e.fin {
       bins done   = {FIN_DONE};
       bins err_rd = {FIN_ERR_RD};
@@ -151,6 +151,26 @@ class dma_coverage extends uvm_subscriber #(dma_cov_evt);
     }
   endgroup
 
+  // ---------------------------------------------------------------------------
+  // Reset in the middle of operation
+  // ---------------------------------------------------------------------------
+  covergroup cg_reset with function sample(dma_cov_evt e);
+    option.per_instance = 1;
+    cp_phase: coverpoint e.phase {
+      bins engine_idle = {0};
+      bins read_burst  = {1};
+      bins write_burst = {2};
+    }
+    cp_busy: coverpoint e.n_busy {
+      bins none = {0};
+      bins one  = {1};
+      bins many = {[2:`DMA_NUM_CH]};
+    }
+    cp_when: coverpoint e.mid_cycle { bins on_edge = {0}; bins between_edges = {1}; }
+    cp_en: coverpoint e.en;
+    x_phase_when: cross cp_phase, cp_when;
+  endgroup
+
   function new(string name, uvm_component parent);
     super.new(name, parent);
     cg_start    = new();
@@ -161,6 +181,7 @@ class dma_coverage extends uvm_subscriber #(dma_cov_evt);
     cg_cmd      = new();
     cg_apb      = new();
     cg_irq      = new();
+    cg_reset    = new();
   endfunction
 
   virtual function void write(dma_cov_evt t);
@@ -177,6 +198,7 @@ class dma_coverage extends uvm_subscriber #(dma_cov_evt);
       EV_ABORT:         cg_cmd.sample(t);
       EV_APB:           cg_apb.sample(t);
       EV_IRQ:           cg_irq.sample(t);
+      EV_RESET:         cg_reset.sample(t);
       default: ;
     endcase
   endfunction
@@ -185,8 +207,8 @@ class dma_coverage extends uvm_subscriber #(dma_cov_evt);
     real s;
     s = cg_start.get_inst_coverage() + cg_burst.get_inst_coverage() + cg_wr_order.get_inst_coverage() +
         cg_grant.get_inst_coverage() + cg_finish.get_inst_coverage() + cg_cmd.get_inst_coverage() +
-        cg_apb.get_inst_coverage() + cg_irq.get_inst_coverage();
-    return s / 8.0;
+        cg_apb.get_inst_coverage() + cg_irq.get_inst_coverage() + cg_reset.get_inst_coverage();
+    return s / 9.0;
   endfunction
 
   virtual function void report_phase(uvm_phase phase);
@@ -199,6 +221,7 @@ class dma_coverage extends uvm_subscriber #(dma_cov_evt);
     s = {s, $sformatf("\n  cg_cmd      %6.2f%%", cg_cmd.get_inst_coverage())};
     s = {s, $sformatf("\n  cg_apb      %6.2f%%", cg_apb.get_inst_coverage())};
     s = {s, $sformatf("\n  cg_irq      %6.2f%%", cg_irq.get_inst_coverage())};
+    s = {s, $sformatf("\n  cg_reset    %6.2f%%", cg_reset.get_inst_coverage())};
     s = {s, $sformatf("\n  average     %6.2f%%", total())};
     `uvm_info("COV", s, UVM_LOW)
   endfunction

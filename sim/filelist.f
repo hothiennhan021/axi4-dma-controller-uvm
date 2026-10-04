@@ -1,5 +1,6 @@
 // Source list (paths relative to the repository root). The UVM library is
 // added by the simulator-specific scripts.
++incdir+tb/top
 +incdir+tb/agents/apb
 +incdir+tb/agents/axi
 +incdir+tb/env

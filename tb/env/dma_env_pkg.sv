@@ -1,6 +1,8 @@
 // -----------------------------------------------------------------------------
 // dma_env_pkg - environment: scoreboard, coverage, virtual sequencer, env
 // -----------------------------------------------------------------------------
+`include "dma_tb_defines.svh"
+
 package dma_env_pkg;
 
   import uvm_pkg::*;

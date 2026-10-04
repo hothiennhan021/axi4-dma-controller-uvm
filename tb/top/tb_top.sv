@@ -1,27 +1,34 @@
 // -----------------------------------------------------------------------------
 // tb_top - clock, reset, DUT, interfaces, UVM start
 //
+// Compile-time: +define+DMA_NUM_CH=<n> selects the number of channels (default 4).
 // Plusargs:
 //   +UVM_TESTNAME=<test>     test to run
 //   +WAVES                   dump waves (Verilator: build with WAVES=1)
 // -----------------------------------------------------------------------------
+`include "dma_tb_defines.svh"
+
 module tb_top;
 
   import uvm_pkg::*;
   import dma_test_pkg::*;
 
-  localparam int unsigned NUM_CH = 4;
+  localparam int unsigned NUM_CH = `DMA_NUM_CH;
   localparam int unsigned ID_W   = 4;
 
-  logic clk   = 1'b0;
-  logic rst_n = 1'b0;
+  logic clk = 1'b0;
+  logic rst_n;
 
   always #5ns clk = ~clk;            // 100 MHz
 
+  // Power-on reset; tests can reset again through rst_bus (see rst_if)
+  rst_if rst_bus (.clk(clk));
+  assign rst_n = rst_bus.rst_n;
+
   initial begin
-    rst_n = 1'b0;
+    rst_bus.rst_n = 1'b0;
     repeat (8) @(posedge clk);
-    rst_n <= 1'b1;
+    rst_bus.rst_n <= 1'b1;
   end
 
   apb_if apb_bus (.clk(clk), .rst_n(rst_n));
@@ -78,6 +85,8 @@ module tb_top;
     uvm_config_db#(virtual apb_if)::set(null, "uvm_test_top", "apb_vif", apb_bus);
     uvm_config_db#(virtual axi_if)::set(null, "uvm_test_top", "axi_vif", axi_bus);
     uvm_config_db#(virtual irq_if)::set(null, "uvm_test_top", "irq_vif", irq_bus);
+    uvm_config_db#(virtual rst_if)::set(null, "uvm_test_top", "rst_vif", rst_bus);
+    uvm_config_db#(int unsigned)::set(null, "uvm_test_top", "num_ch", NUM_CH);
     run_test();
   end
 

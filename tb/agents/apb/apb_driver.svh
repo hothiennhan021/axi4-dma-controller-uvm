@@ -12,6 +12,7 @@ class apb_driver extends uvm_driver #(apb_seq_item);
 
   apb_agent_cfg  cfg;
   virtual apb_if vif;
+  protected time t_last_done = -1;   // completion time of the previous transfer
 
   function new(string name, uvm_component parent);
     super.new(name, parent);
@@ -26,13 +27,28 @@ class apb_driver extends uvm_driver #(apb_seq_item);
 
   virtual task run_phase(uvm_phase phase);
     idle_bus();
-    @(posedge vif.clk iff vif.rst_n === 1'b1);
     forever begin
+      if (vif.rst_n !== 1'b1) begin
+        idle_bus();
+        @(posedge vif.clk iff vif.rst_n === 1'b1);
+      end
       seq_item_port.get_next_item(req);
       drive(req);
       seq_item_port.item_done();
     end
   endtask
+
+  // A reset during a transfer aborts it: the bus goes idle and the item is
+  // returned with slverr=1 (a register access then completes UVM_NOT_OK).
+  protected function bit in_reset(apb_seq_item t);
+    if (vif.rst_n === 1'b1) return 1'b0;
+    idle_bus();
+    t.slverr    = 1'b1;
+    if (!t.write) t.data = '0;
+    t_last_done = -1;
+    `uvm_info("APB_DRV", {"transfer aborted by reset: ", t.convert2string()}, UVM_MEDIUM)
+    return 1'b1;
+  endfunction
 
   protected function void idle_bus();
     vif.psel    <= 1'b0;
@@ -41,8 +57,6 @@ class apb_driver extends uvm_driver #(apb_seq_item);
     vif.paddr   <= '0;
     vif.pwdata  <= '0;
   endfunction
-
-  protected time t_last_done = -1;
 
   protected task drive(apb_seq_item t);
     int unsigned idle, waits;
@@ -54,6 +68,7 @@ class apb_driver extends uvm_driver #(apb_seq_item);
       repeat (idle) @(posedge vif.clk);
       @(posedge vif.clk);
     end
+    if (in_reset(t)) return;
     // SETUP
     vif.psel    <= 1'b1;
     vif.penable <= 1'b0;
@@ -62,10 +77,12 @@ class apb_driver extends uvm_driver #(apb_seq_item);
     vif.pwdata  <= t.write ? t.data : 32'h0;
     // ACCESS
     @(posedge vif.clk);
+    if (in_reset(t)) return;
     vif.penable <= 1'b1;
     waits = 0;
     forever begin
       @(posedge vif.clk);
+      if (in_reset(t)) return;
       if (vif.pready === 1'b1) break;
       if (++waits > cfg.pready_timeout) begin
         `uvm_error("APB_TIMEOUT", $sformatf("PREADY not seen within %0d cycles: %s",

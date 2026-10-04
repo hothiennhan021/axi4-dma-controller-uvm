@@ -14,6 +14,7 @@ class dma_env_cfg extends uvm_object;
   axi_slave_cfg  axi_cfg;
   axi_mem        mem;
   virtual irq_if irq_vif;
+  virtual rst_if rst_vif;
 
   function new(string name = "dma_env_cfg");
     super.new(name);

@@ -14,7 +14,8 @@ typedef enum int {
   EV_BURST,           // burst completed (read or write)
   EV_FINISH,          // channel finished (done / error / aborted)
   EV_APB,             // any APB transfer
-  EV_IRQ              // irq rising edge
+  EV_IRQ,             // enabled interrupt sources changed while irq is high
+  EV_RESET            // reset asserted after the power-on reset
 } dma_ev_kind_e;
 
 typedef enum int {FIN_DONE, FIN_ERR_RD, FIN_ERR_WR, FIN_ABORT} dma_fin_kind_e;
@@ -59,6 +60,11 @@ class dma_cov_evt extends uvm_object;
   bit            write;
   bit            slverr;
   bit [4:0]      reg_off;
+
+  // EV_RESET
+  int unsigned   phase;       // 0 engine idle, 1 read burst in flight, 2 write burst in flight
+  int unsigned   n_busy;      // busy channels when reset hit
+  bit            mid_cycle;   // asserted between clock edges
 
   // EV_IRQ
   bit [31:0]     int_status;
