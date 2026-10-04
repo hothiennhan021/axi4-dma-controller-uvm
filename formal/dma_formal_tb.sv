@@ -10,13 +10,15 @@
 //   * WSTRB = 0xF, WLAST exactly on beat AWLEN+1
 //   * at most one read and one write burst outstanding
 //   * PSLVERR only in the APB access phase, PRDATA = 0 on an erroring read
-// Cover statements show that a transfer can complete and raise irq.
+// Cover statements show that a transfer can complete and raise irq, and that
+// reset can hit a burst in flight. Reset may be asserted at any cycle.
 //
 // Written with immediate assertions in clocked always blocks (the subset the
 // open-source Yosys front end supports).
 // -----------------------------------------------------------------------------
 module dma_formal_tb (
   input logic        clk,
+  input logic        rst_req,      // free: reset may be re-asserted at any time
   // APB master (free)
   input logic        psel,
   input logic        penable,
@@ -38,10 +40,12 @@ module dma_formal_tb (
 );
 
   // ---------------------------------------------------------------------------
-  // Reset: low for the first two cycles, then high forever
+  // Reset: low for the first cycles, afterwards asserted whenever the solver
+  // chooses (rst_req), so every property must also hold around a reset in the
+  // middle of a transfer.
   // ---------------------------------------------------------------------------
   reg [1:0] rst_cnt = 2'd0;
-  wire      rst_n = (rst_cnt == 2'd3);
+  wire      rst_n = (rst_cnt == 2'd3) && !rst_req;
   always @(posedge clk) if (rst_cnt != 2'd3) rst_cnt <= rst_cnt + 2'd1;
 
   reg f_past_valid = 1'b0;
@@ -238,6 +242,8 @@ module dma_formal_tb (
       cover(irq);                             // a channel finishes and interrupts
       cover(r_hs && rresp[1]);                // read error accepted
     end
+    // reset arrives while a write burst is in flight
+    if (f_past_valid) cover(!rst_n && $past(rst_n && wvalid));
   end
 
 endmodule : dma_formal_tb

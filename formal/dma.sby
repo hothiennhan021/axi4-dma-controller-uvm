@@ -1,15 +1,19 @@
 [tasks]
+prove
 bmc
 cover
 
 [options]
+prove: mode prove
 bmc: mode bmc
 bmc: depth 40
 cover: mode cover
 cover: depth 28
 
 [engines]
-smtbmc yices
+prove: abc pdr
+bmc: smtbmc yices
+cover: smtbmc yices
 
 [script]
 plugin -i slang
